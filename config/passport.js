@@ -31,24 +31,25 @@ module.exports = function(passport) {
 
     // used to serialize the user for the session
     passport.serializeUser(function(user, done) {
-        console.log('serialize::user:')
-	   console.log(user);
+        console.log('serialize user:')
+        console.log(user);
 		done(null, user.user_id);
     });
 
     // used to deserialize the user
     passport.deserializeUser(function(id, done) {
+        // var getUserProfileSp = new sp('sp_get_user_profile');
+        // getUserProfileSp.add(id);
 
-		connection.query("select * from tbl_user_login where user_id = "+id,function(err,rows){
-              console.log('deserialize::rows:');
-		      console.log(rows);
+        // connection.query(getUserProfileSp.call(), function(err,rows){
+        connection.query("select * from tbl_user_login where user_id = "+id,function(err,rows){
+            if(err)
+                done(err);
+            console.log('deserialize::rows:');
+		    console.log(rows);
 			done(err, rows[0]);
 		
 		});
-		/*User.findById(id, function(err, user) {
-         
-			done(err, user);
-        });*/
     });
 
  	// =========================================================================
@@ -65,26 +66,33 @@ module.exports = function(passport) {
     },
     function(req, email, password, done) {
         console.log('email:'+email+'\npassword:'+password+'\n');
-		// find a user whose email is the same as the forms email
-        var spEmail = "'"+email+"'";
-        var spPassword = "'"+password+"'";
-        
+        console.log(req.body);
+		
+        var spGender = 1;
+        var spDate = "1988-09-30";
+        var spLocation = 1;
+        var spEmail = email;
+        var spPassword = password;
+        var spVerify = "thisismyverify";
+        var spFBUser = 0;
+
         var userSignupSp = new sp('sp_user_signup');
-        userSignupSp.add('1');
-        userSignupSp.add('123');
-        userSignupSp.add('1');
-        userSignupSp.add(spEmail);
-        userSignupSp.add(spPassword);
-        userSignupSp.add('null');
-        userSignupSp.add('null');
+        userSignupSp.add(spGender,false);            // Gender - (1:Male 2:Female)
+        userSignupSp.add(spDate,true);               // DOB - (28-11-1986)
+        userSignupSp.add(spLocation,false);          // Location - (Refer tbl_location for IDs)
+        userSignupSp.add(spEmail,true);              // email id
+        userSignupSp.add(spPassword,true);           // password
+        userSignupSp.add(spVerify,true);             // Verify_UUID - (UUID for email verification)
+        userSignupSp.add(spFBUser,false);            // FB_user - (0-False 1-True)
         
         connection.query(userSignupSp.call(), function(err,rows){
             if (err)
                 return done(err);
             console.log(rows);
             
+            // handle error during signup
             if(rows[0][0].user_id == -1) {
-                 return done(null, false, req.flash('signupMessage', 'That email is already taken.'));
+                return done(null, false, req.flash('signupMessage', 'That email is already taken.'));
             }
             var newUser = new Object();
             newUser.email    = email;
@@ -110,23 +118,51 @@ module.exports = function(passport) {
     },
     function(req, email, password, done) { // callback with email and password from our form
 
-         connection.query("select * from tbl_user_login where email = '"+email+"'",function(err,rows){
-		
-	
+        var userLoginSp = new sp('sp_user_auth');
+        var spEmail = "'"+email+"'";
+        var spPassword = "'"+password+"'";
+    
+        userLoginSp.add(spEmail);
+        userLoginSp.add(spPassword);
+
+        connection.query(userLoginSp.call(), function(err,rows){
 			if (err)
                 return done(err);
-			 if (!rows.length) {
-                return done(null, false, req.flash('loginMessage', 'No user found.')); // req.flash is the way to set flashdata using connect-flash
-            } 
-			
-			// if the user is found but the password is wrong
-            if (!( rows[0].password == password))
-                return done(null, false, req.flash('loginMessage', 'Oops! Wrong password.')); // create the loginMessage and save it to session as flashdata
-			
+
+            console.log('login rows:');
+            console.log(rows);
+            loggedInUserId = rows[0][0].user_id;
+            
+            // Handle wrong email or password
+            if(loggedInUserId == -1) {
+                return done(null, false, req.flash('loginMessage', 'The Email or Password provided is wrong.'));
+            }
+
+            // After user is successfully logged in, get his details
+            var rows = getUserProfile(loggedInUserId);        
+
+            var loggedInUser = new Object();
+            loggedInUser.email    = email;
+            loggedInUser.password = password;
+            loggedInUser.user_id = loggedInUserId;
+            console.log('id is:'+loggedInUser.user_id);
+
             // all is well, return successful user
-            return done(null, rows[0]);			
+            return done(null, loggedInUser);			
 		
 		});
+
     }));
 
+    function getUserProfile (loggedInUserId) {
+        console.log('Inside getuserprofile function');
+        var getUserProfileSp = new sp('sp_get_user_profile');
+        getUserProfileSp.add(loggedInUserId, false);
+        connection.query(getUserProfileSp.call(), function(err,rows){
+            if(err)
+                return err;
+            console.log(rows);
+            return rows[0];
+        }); 
+    }
 };
