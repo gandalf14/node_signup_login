@@ -18,6 +18,7 @@ var connection = mysql.createConnection({
 connection.query('USE stubeesc_sparkk'); 
 
 var sp = require('sparkk-lib/store-procedure');
+var hasher = require('sparkk-lib/hasher');
 
 
 // expose this function to our app using module.exports
@@ -29,27 +30,19 @@ module.exports = function(passport) {
     // required for persistent login sessions
     // passport needs ability to serialize and unserialize users out of session
 
-    // used to serialize the user for the session
+    // Used to serialize the user for the session
     passport.serializeUser(function(user, done) {
-        console.log('serialize user:')
-        console.log(user);
-		done(null, user.user_id);
+        console.log("Serializing User : "+user.user_id);
+        done(null, user.user_id);
     });
 
-    // used to deserialize the user
+    // Used to deserialize the user
     passport.deserializeUser(function(id, done) {
-        // var getUserProfileSp = new sp('sp_get_user_profile');
-        // getUserProfileSp.add(id);
+        var user = {};
+        user.user_id = id;
 
-        // connection.query(getUserProfileSp.call(), function(err,rows){
-        connection.query("select * from tbl_user_login where user_id = "+id,function(err,rows){
-            if(err)
-                done(err);
-            console.log('deserialize::rows:');
-		    console.log(rows);
-			done(err, rows[0]);
-		
-		});
+        console.log("Deserializing User : "+id);
+        done(null, user);
     });
 
  	// =========================================================================
@@ -68,11 +61,14 @@ module.exports = function(passport) {
         console.log('email:'+email+'\npassword:'+password+'\n');
         console.log(req.body);
 		
+        var hash = new hasher();
+        var hashedpwd = hash.createHashedPassword(password);
+        // var hashedpwd = password;
         var spGender = 1;
         var spDate = "1988-09-30";
         var spLocation = 1;
         var spEmail = email;
-        var spPassword = password;
+        var spPassword = hashedpwd;
         var spVerify = "thisismyverify";
         var spFBUser = 0;
 
@@ -94,9 +90,7 @@ module.exports = function(passport) {
             if(rows[0][0].user_id == -1) {
                 return done(null, false, req.flash('signupMessage', 'That email is already taken.'));
             }
-            var newUser = new Object();
-            newUser.email    = email;
-            newUser.password = password;
+            var newUser = {};
             newUser.user_id = rows[0][0].user_id;
             console.log('id is:'+newUser.user_id);
             return done(null, newUser);
@@ -123,8 +117,7 @@ module.exports = function(passport) {
         var spPassword = "'"+password+"'";
     
         userLoginSp.add(spEmail);
-        userLoginSp.add(spPassword);
-
+        
         connection.query(userLoginSp.call(), function(err,rows){
 			if (err)
                 return done(err);
@@ -132,18 +125,26 @@ module.exports = function(passport) {
             console.log('login rows:');
             console.log(rows);
             loggedInUserId = rows[0][0].user_id;
+            dbPwd = rows[0][0].password;
+            var hash = new hasher();
+
+            // Handle errors in db
+            if(password == "invalid" || loggedInUserId == "-1") {
+                return done(null, false, req.flash('loginMessage', 'Bad access to database, try again.'));
+            }
+
+            var isValidPassword = hash.validatePassword(password, dbPwd);
+            console.log("Is password valid: "+isValidPassword);
             
             // Handle wrong email or password
-            if(loggedInUserId == -1) {
+            if(!isValidPassword) {
                 return done(null, false, req.flash('loginMessage', 'The Email or Password provided is wrong.'));
             }
 
-            // After user is successfully logged in, get his details
-            var rows = getUserProfile(loggedInUserId);        
+  //           // After user is successfully logged in, get his details
+  //           var rows = getUserProfile(loggedInUserId);        
 
-            var loggedInUser = new Object();
-            loggedInUser.email    = email;
-            loggedInUser.password = password;
+            var loggedInUser = {};
             loggedInUser.user_id = loggedInUserId;
             console.log('id is:'+loggedInUser.user_id);
 
